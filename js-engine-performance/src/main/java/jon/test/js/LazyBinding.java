@@ -30,11 +30,12 @@ import org.graalvm.polyglot.Value;
  * 
  */
 public class LazyBinding {
-  static {
-    // Use interpreted mode
-    System.setProperty("polyglotimpl.DisableClassPathIsolation", "true");
-    System.setProperty("polyglot.engine.WarnInterpreterOnly", "false");
-  }
+  // Uncomment following static block to use interpreted mode:
+
+//  static {
+//    System.setProperty("polyglotimpl.DisableClassPathIsolation", "true");
+//    System.setProperty("polyglot.engine.WarnInterpreterOnly", "false");
+//  }
 
   /**
    * Encapsulate a JavaScript engine and context. This allows common code to evaluate JavaScript
@@ -95,7 +96,7 @@ public class LazyBinding {
           //
           // NOTE: bindings.getMemberKeys().clear() throws an exception, as does
           // using an Iterator and calling remove().
-          bindings.getMemberKeys().forEach(s -> bindings.removeMember(s));
+          // bindings.getMemberKeys().forEach(s -> bindings.removeMember(s));
         }
 
         @Override
@@ -254,6 +255,25 @@ public class LazyBinding {
     // Bind all variables in the Map into an Evaluator
     BiConsumer<Evaluator, String> bindAll =
         (evaluator, snippet) -> variables.forEach((name, value) -> evaluator.bind(name, value));
+    // Bind all variables in the Map using a script to set the values
+    BiConsumer<Evaluator, String> bindAllScript = (evaluator, snippet) -> {
+      StringBuilder sb = new StringBuilder();
+      variables.forEach((name, value) -> {
+        sb.append("var ");
+        sb.append(name);
+        sb.append('=');
+        boolean isString = !(value instanceof Number);
+        if (isString) {
+          sb.append('\'');
+        }
+        sb.append(value);
+        if (isString) {
+          sb.append('\'');
+        }
+        sb.append(';');
+      });
+      evaluator.eval(sb.toString());
+    };
     // Iterate over extracted tokens and bind if they have a value in the variables
     // map
     BiConsumer<Evaluator, String> bindReferenced = (evaluator, snippet) -> {
@@ -273,17 +293,19 @@ public class LazyBinding {
 
     };
 
-    Supplier<Evaluator> evaluatorFactory = graalEvaluatorFactory(cachingSourceFactory());
-    //Supplier<Evaluator> evaluatorFactory = rhinoEvaluatorFactory();
+    Supplier<Evaluator> graaljsCachingFactory = graalEvaluatorFactory(cachingSourceFactory());
+    Supplier<Evaluator> graaljsFactory = graalEvaluatorFactory(nonCachingSourceFactory());
+    Supplier<Evaluator> rhinoFactory = rhinoEvaluatorFactory();
 
-    int totalIterations = 5_000;
+    int totalIterations = 50_000;
 
     for (int i = 0; i < 5; i++) {
-      System.out.println("       Bind All: " + test(evaluatorFactory, bindAll, totalIterations));
-      System.out
-          .println("Bind Referenced: " + test(evaluatorFactory, bindReferenced, totalIterations));
+      System.out.println("GraalJS script+cache: "
+          + test(graaljsCachingFactory, bindAllScript, totalIterations));
       System.out.println(
-          "    Inefficient: " + test(evaluatorFactory, bindReferencedInefficient, totalIterations));
+          " GraalJS bind script: " + test(graaljsFactory, bindAllScript, totalIterations));
+      System.out
+          .println("      Rhino bind all: " + test(rhinoFactory, bindAll, totalIterations));
     }
   }
 }
